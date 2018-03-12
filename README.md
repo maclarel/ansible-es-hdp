@@ -92,6 +92,7 @@ In the event that a failure is encountered during a task, the installer will pro
 # Notes
 - Once the installation is complete, I strongly recommends changing the password for the `username` user on all machines. This will not impact operation of the system.
 - With the current release, only the first Master node specified will have services assigned to it in Ambari. This is to prevent duplicate (critical) services from being applied by means of Ambari Blueprints. A future release will support automation configuration of multiple Master role servers within Ambari. At this time if additional Master services are required, they should be manually provisioned/moved to the desired servers within Ambari.
+- Credit to https://github.com/rwallinterset for a large part of the development of the Ambari blueprinting scripts used here.
 
 # Additional Variables
 
