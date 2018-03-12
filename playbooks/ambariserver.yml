@@ -1,0 +1,88 @@
+- hosts: ambari
+  user: username
+  become: true
+  become_user: root
+
+  tasks:
+
+    # Ensure yum is up to date
+    # Using 'command' as the Ansible yum module does
+    # not yet support 'clean'
+    - name: Clear yum cache
+      command: "yum clean all"
+
+    # Confirm that private/public key exist for user
+    - name: Configuring SSH Key (1/2)
+      stat:
+        path: /home/username/.ssh/id_rsa
+      register: ssh_key_exists
+
+    # Create SSH key if it does not already exist
+    - name: Configuring SSH Key (2/2)
+      become_user: username
+      command: 'ssh-keygen -t rsa -N "" -C "username@{{ ansible_fqdn }}" -f ~/.ssh/id_rsa'
+      when: ssh_key_exists.stat.exists == false
+
+
+    # Ensure Ambari server has passwordless SSH access to all other nodes
+    - name: Copying SSH ID to other servers
+      command: "sshpass -p {{ user_pass }} ssh-copy-id -i /home/username/.ssh/id_rsa.pub -o StrictHostKeyChecking=no username@{{ item }}"
+      with_inventory_hostnames: all
+
+    # Install latest version of Ambari Server
+    - name: Install Ambari Server
+      yum:
+        name: ambari-server
+        state: installed
+
+    # Do silent configuration of ambari-server
+    - name: Configure Ambari
+      expect:
+        command: ambari-server setup
+        responses:
+          'OK to continue \[y/n\] \(y\)\?': y
+          'Customize user account for ambari-server daemon \[y/n\] \(n\)\?': y
+          'Enter user account for ambari-server daemon \(root\)': username
+          'Do you want to change Oracle JDK \[y/n\] \(n\)\?': y
+          'Enter choice \(1\)': 3
+          'Path to JAVA_HOME': /usr/java/default
+          'Enter advanced database configuration \[y/n\] \(n\)\?': n
+          'Ambari-server daemon is configured to run under user': n
+        timeout: 120
+        echo: yes
+
+    # Set required values for bootstrap and recommendations directories
+    # This updates bootstrap.dir and recommendations.dir as these get created
+    # in an ephemeral directory by default, which doesn't play friendly with 
+    # running as a non-root user
+    - name: Set bootstrap & recommendations directories
+      lineinfile:
+        path: /etc/ambari-server/conf/ambari.properties
+        state: present
+        regexp: "{{ item.regexp }}"
+        line:  "{{ item.line }}"
+      with_items:
+        - { regexp: '^bootstrap.dir=', line: 'bootstrap.dir=/var/lib/ambari-server/bootstrap/' }
+        - { regexp: '^recommendations.dir=', line: 'recommendations.dir=/var/lib/ambari-server/stack-recommendations/' }
+
+    - name: Start ambari (EL7)
+      systemd:
+          name: ambari-server
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "7"
+
+    - name: Start ambari (EL6)
+      systemd:
+          name: ambari-server
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "6"
+
+    - name: Confirm Ambari is running
+      wait_for: 
+        host: "{{ groups['ambari'][0] }}"
+        port: 8080
+        delay: 10
+        state: started
+        timeout: 600

@@ -1,0 +1,77 @@
+- hosts: allServers
+  user: username
+  become: true
+  become_user: root
+
+  tasks:
+
+    # Ensure yum is up to date
+    # Using 'command' as the Ansible yum module does
+    # not yet support 'clean'
+    - name: Clear yum cache
+      command: "yum clean all"
+
+    # Install prerequisite packages for HDP & useful tools
+    - name: Remove existing Snappy packages
+      yum: 
+        name: snappy
+        state: removed
+
+    - name: Install Prereqs
+      yum: 
+        pkg: "{{ item }}"
+      with_items:
+        - yum-utils.noarch
+        - wget
+        - libselinux-python
+        - java-1.8.0-openjdk
+        - zip.x86_64 
+        - unzip.x86_64 
+        - openssh-server 
+        - tar 
+        - sudo 
+        - ntp 
+        - ntpdate
+        - snappy-devel-1.0.5-1.el6.x86_64
+        - python-pip
+        - sshpass
+        - rsync
+
+    # Install pexpect for use with later setup steps
+    - pip:
+        name: pexpect
+
+    # Configure Java
+    - name: Configure Java (1/2)
+      lineinfile:
+        path: /etc/profile
+        state: present
+        line: 'export JAVA_HOME=/usr/java/default' 
+
+    - name: Configure Java (2/2)
+      blockinfile:
+        path: /etc/profile.d/java.sh
+        state: present
+        create: yes
+        block: |
+          #!/bin/bash
+          export JAVA_HOME=/usr/java/default
+
+    # Disable THP
+    - name: Disabling Transparent Huge Pages
+      script: ../files/disableTHP.sh
+
+    # Ensure NTP is enabled for HDP managed services
+    - name: Start NTP (EL7)
+      systemd:
+          name: ntpd
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "7"
+
+    - name: Start NTP (EL6)
+      service:
+          name: ntpd
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "6"

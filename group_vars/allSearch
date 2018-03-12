@@ -1,0 +1,12 @@
+---
+es_yml: /etc/elasticsearch/elasticsearch.yml
+es_cluster_name: ansiblecluster
+
+# Logic for determining number of masters, and combining host
+# names for unicast.hosts
+es_master_count: "{{ groups['search'] | length }}"
+es_min_masters: '{{ "1" if (es_master_count| count <= 2)
+					else ((es_master_count | count / 2) | round | int + 1) }}'
+es_unicast_hosts: "{{ groups['allSearch']|join(',') }}"
+es_heap_size: '{{ "30" if (ansible_memtotal_mb>62464) 
+                else (ansible_memtotal_mb*0.00048828125)|round|int - 1 }}'

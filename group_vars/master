@@ -1,0 +1,4 @@
+---
+zk_hosts: "{{ groups['master']|join(':2181,') }}"
+phoenix_zk_hosts: "{{ groups['master']|join(',') }}"
+broker_list: "{{ groups['stream']|join(':6667,') }}"

@@ -1,0 +1,88 @@
+#-------
+hbase-site hbase.rpc.timeout 300000
+hbase-site phoenix.query.timeoutMs 360000
+hbase-site phoenix.functions.allowUserDefinedFunctions true 
+hbase-site hbase.rpc.controllerfactory.class org.apache.hadoop.hbase.ipc.controller.ServerRpcControllerFactory 
+hbase-site hbase.region.server.rpc.scheduler.factory.class org.apache.hadoop.hbase.ipc.PhoenixRpcSchedulerFactory 
+hbase-site hbase.client.scanner.timeout.period 2147483646 
+hbase-site phoenix.coprocessor.maxServerCacheTimeToLiveMS 1800000 
+hbase-site phoenix.groupby.maxCacheSize 204800000 
+hbase-site phoenix.query.maxServerCacheBytes 419430400 
+hbase-site phoenix.sequence.saltBuckets 8
+hbase-site phoenix.mutate.maxSize 5000000
+hbase-env phoenix_sql_enabled true
+#---
+spark-defaults spark.driver.extraClassPath /etc/hbase/conf:/usr/hdp/current/phoenix-client/phoenix-client.jar 
+spark-defaults spark.executor.extraClassPath /usr/hdp/current/phoenix-client/phoenix-client.jar 
+spark-defaults spark.kryoserializer.buffer.max 128m 
+spark-defaults spark.executor.memoryOverhead 1024 
+#---
+zoo.cfg maxClientCnxns 0 
+#---
+storm-site worker.childopts "-Xmx2048m _JAAS_PLACEHOLDER -javaagent:/usr/hdp/current/storm-client/contrib/storm-jmxetric/lib/jmxetric-1.0.4.jar=host=localhost,port=8650,wireformat31x=true,mode=multicast,config=/usr/hdp/current/storm-client/contrib/storm-jmxetric/conf/jmxetric-conf.xml,process=Worker_%ID%_JVM" 
+#---
+flume-env content 
+{
+	export JAVA_HOME={{java_home}}
+	export JAVA_OPTS="-Xms100m -Xmx2001m -Dcom.sun.management.jmxremote"
+
+	if [ -e "/usr/lib/flume/lib/ambari-metrics-flume-sink.jar" ]; then
+		export FLUME_CLASSPATH=$FLUME_CLASSPATH:/usr/lib/flume/lib/ambari-metrics-flume-sink.jar
+	fi
+
+	export HIVE_HOME={{flume_hive_home}}
+	export HCAT_HOME={{flume_hcat_home}} 
+}
+#---
+kafka-broker auto.create.topics.enable true
+kafka-broker num.partitions 8
+kafka-broker delete.topic.enable true 
+kafka-log4j content 
+{
+kafka.logs.dir=logs
+log4j.rootLogger=INFO,stdout
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=[%d] %p %m (%c)%u
+log4j.appender.kafkaAppender.File=${kafka.logs.dir}/server.log
+log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.kafkaAppender=org.apache.log4j.RollingFileAppender
+log4j.appender.kafkaAppender.MaxFileSize=10MB
+log4j.appender.kafkaAppender.MaxBackupIndex=9
+log4j.appender.stateChangeAppender.File=${kafka.logs.dir}/state-change.log
+log4j.appender.stateChangeAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.stateChangeAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.stateChangeAppender=org.apache.log4j.RollingFileAppender
+log4j.appender.stateChangeAppender.MaxFileSize=10MB
+log4j.appender.stateChangeAppender.MaxBackupIndex=9
+log4j.appender.requestAppender.File=${kafka.logs.dir}/kafka-request.log
+log4j.appender.requestAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.requestAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.requestAppender=org.apache.log4j.RollingFileAppender
+log4j.appender.requestAppender.MaxFileSize=10MB
+log4j.appender.requestAppender.MaxBackupIndex=9
+log4j.appender.cleanerAppender.File=${kafka.logs.dir}/log-cleaner.log
+log4j.appender.cleanerAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.cleanerAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.cleanerAppender=org.apache.log4j.RollingFileAppender
+log4j.appender.cleanerAppender.MaxFileSize=10MB
+log4j.appender.cleanerAppender.MaxBackupIndex=9
+log4j.appender.controllerAppender.File=${kafka.logs.dir}/controller.log
+log4j.appender.controllerAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.controllerAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.controllerAppender=org.apache.log4j.RollingFileAppender
+log4j.appender.controllerAppender.MaxFileSize=10MB
+log4j.appender.controllerAppender.MaxBackupIndex=9
+log4j.logger.kafka=INFO,kafkaAppender
+log4j.logger.kafka.network.RequestChannel$=WARN,requestAppender
+log4j.additivity.kafka.network.RequestChannel$=false
+log4j.logger.kafka.request.logger=WARN,requestAppender
+log4j.additivity.kafka.request.logger=false
+log4j.logger.kafka.controller=TRACE,controllerAppender
+log4j.additivity.kafka.controller=false
+log4j.logger.kafka.log.LogCleaner=INFO,cleanerAppender
+log4j.additivity.kafka.log.LogCleaner=false
+log4j.logger.state.change.logger=TRACE,stateChangeAppender
+log4j.additivity.state.change.logger=false 
+}

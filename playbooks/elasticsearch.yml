@@ -1,0 +1,128 @@
+- hosts: allSearch
+  user: username
+  become: true
+  become_user: root
+
+  tasks:
+
+# TO DO: Add head config/installation
+# TO DO: Add rolling appender for logging
+
+    # Ensure yum is up to date
+    # Using 'command' as the Ansible yum module does
+    # not yet support 'clean'
+    - name: Clear yum cache
+      command: "yum clean all"
+
+    # Install ES 5.2.2
+    - name: Install Elasticsearch
+      yum:
+        name: elasticsearch-5.2.2
+        state: installed
+
+    - name: Configure elasticsearch.yml (1/2)
+      replace:
+        path: "{{ es_yml }}"
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      with_items:
+        - { key: '.*cluster.name:.*', value: "cluster.name: '{{ es_cluster_name }}'"}
+        - { key: '.*node.name:.*', value: 'node.name: {{ ansible_fqdn }}'}
+        - { key: '.*network.host:.*', value: 'network.host: {{ ansible_fqdn }}'}
+        # Disabling this one as it appears to be preventing ES from starting in my tests
+        #- { key: '.*bootstrap.memory_lock:.*', value: 'bootstrap.memory_lock: true'}
+        - { key: '^bootstrap.system_call_filter:.*', value: "bootstrap.system_call_filter: false"}
+        - { key: '.*discovery.zen.minimum_master_nodes:.*', value: "discovery.zen.minimum_master_nodes: {{ es_min_masters }}"}
+        - { key: '.*discovery.zen.ping.unicast.hosts:.*', value: 'discovery.zen.ping.unicast.hosts: ["{{ es_unicast_hosts }}"]'}
+   
+    # Disable ability for node to be master/ingest/hold data 
+    # if it is NOT part of the [search] group (i.e. is a load balancer)
+    - name: Configure elasticsearch.yml (2/2)
+      blockinfile:
+        path: "{{ es_yml }}"
+        state: present
+        create: yes
+        block: |
+          node.master: false
+          node.data: false
+          node.ingest: false
+      when: "'search' not in group_names"
+
+    # Set memlock and java_opts
+    - name: Configure /etc/sysconfig/elasticsearch
+      replace:
+        path: /etc/sysconfig/elasticsearch
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      with_items:
+        - { key: '.*MAX_LOCKED_MEMORY=unlimited', value: "MAX_LOCKED_MEMORY=unlimited"}
+        - { key: '.*ES_JAVA_OPTS=.*', value: 'ES_JAVA_OPTS="-Des.cgroups.hierarchy.override="'}
+
+    # Again, set MEMLOCK limit for systemd
+    - name: Configure /usr/lib/systemd/system/elasticsearch.service
+      replace:
+        path: /etc/sysconfig/elasticsearch
+        regexp: .*LimitMEMLOCK=infinity
+        replace: LimitMEMLOCK=infinity
+
+    # Update system limits
+    - name: Update limits.conf
+      blockinfile:
+        path: /etc/security/limits.conf
+        state: present
+        create: yes
+        block: |
+          elasticsearch - nproc 2048
+          elasticsearch - nofile 65536
+          elasticsearch soft memlock unlimited
+          elasticsearch hard memlock unlimited
+
+    # Set required vars in sysctl.conf
+    - name: Configure /etc/sysctl.conf
+      lineinfile:
+        path: /etc/sysctl.conf
+        state: present
+        regexp: "{{ item.key }}"
+        line: "{{ item.value }}"
+      with_items:
+        - { key: 'vm.max_map_count.*', value: 'vm.max_map_count=262144'}
+        - { key: '^vm.swappiness.*', value: 'vm.swappiness=1'}
+
+    # Set heap sizes for ES
+    # We want 1GB for load balancer instance as it is just
+    # a load balancer. All other nodes should be 50% 
+    # of available memory, to max of 30GB.
+    - name: Set Xms/Xmx for load balancer instance(s)
+      replace:
+        path: /etc/elasticsearch/jvm.options
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      when: "'search' not in group_names"
+      with_items:
+        - { key: '^-Xms.*', value: "-Xms1g"}
+        - { key: '^-Xmx.*', value: '-Xmx1g'}
+
+    - name: Set Xms/Xmx for Searchinstance(s)
+      replace:
+        path: /etc/elasticsearch/jvm.options
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      when: "'search' in group_names"
+      with_items:
+        - { key: '^-Xms.*', value: '-Xms{{ es_heap_size }}g'}
+        - { key: '^-Xmx.*', value: '-Xmx{{ es_heap_size }}g'}
+
+    # Register and start service with upstart/systemd
+    - name: Start Elasticsearch (EL7)
+      systemd:
+          name: elasticsearch
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "7"
+
+    - name: Start Elasticsearch (EL6)
+      service:
+          name: elasticsearch
+          state: started
+          enabled: yes
+      when: ansible_distribution_major_version == "6"

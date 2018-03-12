@@ -1,0 +1,28 @@
+# Please reference README.md for instructions on how to use this configuration file
+
+[ambari]
+
+[master]
+
+[compute]
+
+[search]
+
+[search_lb]
+
+
+# Update the repo varaible to point to your local mirror of the required repositories
+[allServers:vars]
+repo=http://repo.company.com
+
+
+[allServers:children]
+ambari
+master
+compute
+search
+search_lb
+
+[allSearch:children]
+search
+search_lb

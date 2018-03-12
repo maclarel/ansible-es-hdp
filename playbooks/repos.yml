@@ -1,0 +1,21 @@
+ - hosts: allServers
+   user: username
+   become: true
+   become_user: root
+
+   tasks:
+
+    #Create repositories needed for installation
+    - name: Configure repositories
+      yum_repository:
+        description: "{{ item.desc }}"
+        name: "{{ item.name }}"
+        baseurl: "{{ item.url }}"
+        gpgcheck: no
+      with_items:
+        - { desc: "Ambari", name: 'ambari', url: "{{ repo }}/AMBARI/AMBARI-2.4.2.0/centos{{ ansible_distribution_major_version }}/2.4.2.0-136/" }
+        - { desc: "Elasticsearch", name: 'elasticsearch', url: "{{ repo }}/elasticsearch/5.2/" }
+        - { desc: "HDP", name: 'HDP', url: "{{ repo }}/HDP/centos{{ ansible_distribution_major_version }}/2.x/updates/2.5.3.0/" }
+        - { desc: "HDP-UTILS", name: 'HDP-UTILS', url: "{{ repo }}/HDP-UTILS/HDP-UTILS-1.1.0.21/repos/centos{{ ansible_distribution_major_version }}/" }
+        - { desc: "Kibana", name: 'kibana', url: "{{ repo }}/kibana/5.2.2" }        
+        - { desc: "Kibana", name: 'kibana', url: "{{ repo }}/kibana/5.2.2" }        

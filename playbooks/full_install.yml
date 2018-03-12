@@ -1,0 +1,6 @@
+- include: repos.yml
+- include: baseline.yml
+- include: ambariserver.yml
+- include: ambariagent.yml
+- include: ambariconfig.yml
+- include: elasticsearch.yml

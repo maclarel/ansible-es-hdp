@@ -1,0 +1,5 @@
+---
+AMBARI_USER_NAME: admin
+AMBARI_USER_PASSWORD: admin
+AMBARI_CLUSTER_NAME: ansiblecluster
+HDP_VERSION: 2.5

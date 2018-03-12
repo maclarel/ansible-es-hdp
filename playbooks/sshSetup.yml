@@ -1,0 +1,29 @@
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+
+    # Create local ssh-key if none exists
+    - name: ssh-keygen
+      shell: if [ ! -e ~/.ssh/id_rsa ] || [ ! -e ~/.ssh/id_rsa.pub ]; then echo "Creating private/public key pair" && ssh-keygen -t rsa -N "" -C "$(whoami)@$(hostname)" -f ~/.ssh/id_rsa; fi
+
+    # Automatically copy ssh key for passwordless access to all cluster hosts
+    # This is designed for running on Linux where sshpass and ssh-copy-id are available
+    - name: ssh-copy-id (Linux)
+      shell: "sshpass -p {{ user_pass }} ssh-copy-id -i ~/.ssh/id_rsa.pub -o StrictHostKeyChecking=no username@{{ item }}"
+      with_inventory_hostnames: all
+      when: ansible_os_family == 'RedHat' or ansible_os_family == 'CentOS' or ansible_os_family == 'Debian'
+
+    # Note that this will prompt for a password, as we don't want to install
+    # a bunch of stuff on the host running Ansible (e.g. pip/pexpect)
+    - name: ssh-copy-id (Other)
+      shell: 'cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no username@{{ item }} "umask 077; mkdir -p .ssh ; cat >> .ssh/authorized_keys"'
+      with_inventory_hostnames: all
+      when: ansible_os_family != 'RedHat' or ansible_os_family != 'CentOS' or ansible_os_family != 'Debian'
+
+    # This will prevent spamming of the authorized_keys file.
+    # This is only required if running from a non-Linux host.
+    - name: authorized_keys cleanup
+      shell: "ssh username@{{ item }} 'umask 077 && sort ~/.ssh/authorized_keys | uniq > ~/.ssh/authorized_keys.new && mv ~/.ssh/authorized_keys.new ~/.ssh/authorized_keys'"
+      with_inventory_hostnames: all
+      when: ansible_os_family != 'RedHat' or ansible_os_family != 'CentOS'

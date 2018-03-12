@@ -1,0 +1,4 @@
+---
+kafka_bin: /usr/hdp/current/kafka-broker/bin
+kafka_partitions: 8
+kafka_replication_factor: 1

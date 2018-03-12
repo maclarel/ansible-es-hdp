@@ -1,0 +1,41 @@
+- hosts: master:compute:stream
+  user: username
+  become: true
+  become_user: root
+
+  tasks:
+
+    # Instal ambari-agent
+    - name: Install Ambari Agent
+      yum:
+        name: "{{ item }}"
+        update_cache: yes
+        state: installed
+      with_items:
+        - ambari-agent
+    
+    # Configure ambari-agent to talk to the ambari node
+    - name: Configure the Ambari Agent
+      lineinfile: 
+        path: /etc/ambari-agent/conf/ambari-agent.ini
+        regexp: "{{ item.key }}"
+        line: "{{ item.value }}"
+        state: present
+      with_items:
+        - { key: '^hostname=', value: "hostname={{ groups['ambari'][0] }}" }
+    
+    # Start/Restart the ambari-agent to pick up
+    # config changes
+    - name: Restart ambari-agent (EL7)
+      systemd: 
+        name: ambari-agent 
+        state: restarted
+        enabled: yes    
+      when: ansible_distribution_major_version == "7"
+
+    - name: Restart ambari-agent (EL6)
+      service: 
+        name: ambari-agent 
+        state: restarted
+        enabled: yes
+      when: ansible_distribution_major_version == "6"

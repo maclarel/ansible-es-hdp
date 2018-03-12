@@ -1,0 +1,151 @@
+- hosts: ambari
+  user: username
+  become: true
+  become_user: root
+
+  tasks:
+    
+    # Transfer scripts to update/stop/start Ambari Service Configs
+    - name: Copy scripts for Ambari Service Configs
+      copy:
+        src: "{{ item.source }}"
+        dest: "{{ item.dest }}"
+      with_items:
+        - { source: '../files/blueprint-generator.sh', dest: '/tmp/blueprint-generator.sh' }
+        - { source: '../files/blueprint_template.json', dest: '/tmp/blueprint_template.json' }
+        - { source: '../files/ambari_config', dest: '/tmp/ambari_config' }
+        - { source: '../files/ambari-services.sh', dest: '/tmp/ambari-services.sh'}
+        - { source: '../files/update_ambari_config.sh', dest: '/tmp/update_ambari_config.sh'}
+
+    # Set permissions on files
+    - name: Set file permissions
+      file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
+      with_items:
+        - { path: '/tmp/blueprint-generator.sh', mode: '0755' }
+        - { path: '/tmp/ambari-services.sh', mode: '0755' }
+        - { path: '/tmp/update_ambari_config.sh', mode: '0755' }
+
+    # Run script to update Ambari Service Configs      
+    - name: Generate Blueprint
+      command: >
+        /tmp/blueprint-generator.sh "{{ groups['master'] }}" "{{ groups['compute'] }}" "{{ groups['stream'] }}" "{{ AMBARI_USER_PASSWORD }}"
+
+    - name: Clean up Blueprint
+      replace:
+        path: /tmp/hostmapping_file.json
+        regexp: "{{ item.start }}"
+        replace: "{{ item.final }}"
+      with_items:
+        - { start: "\\[u\\'", final: "" }
+        - { start: "u\\'", final: "" }
+        - { start: "m',", final: "m" }
+        - { start: "m']", final: "m" }
+
+    - name: Fetch the blueprint
+      slurp: 
+        src: /tmp/ambari_blueprint.json
+      register: ambari_blueprint
+    
+    - name: Ensure Blueprint does not already exist
+      uri: 
+        url: http://{{ ansible_fqdn }}:8080/api/v1/blueprints/ambari_blueprint
+        method: DELETE
+        force_basic_auth: yes
+        user: "{{ AMBARI_USER_NAME }}"
+        password: "{{ AMBARI_USER_PASSWORD }}"
+        HEADER_X-Requested-By: "ambari"
+        status_code: 200,201,202,404
+      ignore_errors: true
+    
+    - name: Register the Blueprint
+      uri: 
+        url: http://{{ ansible_fqdn }}:8080/api/v1/blueprints/ambari_blueprint
+        method: POST
+        force_basic_auth: yes
+        user: "{{ AMBARI_USER_NAME }}"
+        password: "{{ AMBARI_USER_PASSWORD }}"
+        HEADER_X-Requested-By: "ambari"
+        body: " {{ ambari_blueprint.content | b64decode }}"
+        body_format: raw
+        status_code: 200,201,202
+
+    # Should move this over to 'uri' module
+    # but cannot get it working right now
+    - name: Set up Repositories
+      command: >
+        curl -H "X-Requested-By: ambari" -X PUT -u {{ AMBARI_USER_NAME }}:{{ AMBARI_USER_PASSWORD }} http://{{ ansible_fqdn }}:8080/api/v1/stacks/HDP/versions/{{ HDP_VERSION }}/operating_systems/redhat{{ ansible_distribution_major_version }}/repositories/{{ item.repo }} -d '{"Repositories" : {"base_url" : "http://{{ repo }}/{{ item.path }}","verify_base_url" : false}}'
+      with_items:
+        - { repo: "HDP-2.5", path: "HDP/centos{{ ansible_distribution_major_version }}/2.x/updates/2.5.3.0/" }
+        - { repo: "HDP-UTILS-1.1.0.21", path: "HDP-UTILS/HDP-UTILS-1.1.0.21/repos/centos{{ ansible_distribution_major_version }}/" }
+
+    - name: Fetch hostmapping file
+      fetch:
+        src: /tmp/hostmapping_file.json
+        dest: /tmp/hostmapping_file.json
+        flat: yes
+
+    - name: Create the cluster instance
+      uri: 
+        url: http://{{ ansible_fqdn }}:8080/api/v1/clusters/{{ AMBARI_CLUSTER_NAME }}
+        method: POST
+        force_basic_auth: yes
+        user: "{{ AMBARI_USER_NAME }}"
+        password: "{{ AMBARI_USER_PASSWORD }}"
+        HEADER_X-Requested-By: "ambari"
+        #body: " {{ hostmapping_template.content | b64decode }}"
+        body: "{{ lookup('file','/tmp/hostmapping_file.json') | to_json }}"
+        body_format: json
+        status_code: 200,201,202
+
+    - name: Wait for the cluster to be built
+      uri: 
+        url: http://{{ ansible_nodename }}:8080/api/v1/clusters/{{ AMBARI_CLUSTER_NAME }}/requests/1
+        method: GET
+        force_basic_auth: yes
+        user: admin
+        password: admin
+        HEADER_Content-Type: "application/json"
+        HEADER_X-Requested-By: "ambari"
+        status_code: 200,201,202
+        return_content: yes
+      register: cluster_create_task
+      until: ((cluster_create_task.content|from_json).Requests.request_status == 'COMPLETED' or
+             (cluster_create_task.content|from_json).Requests.request_status == 'FAILED' or
+             (cluster_create_task.content|from_json).Requests.request_status == 'TIMEDOUT' or
+             (cluster_create_task.content|from_json).Requests.request_status == 'ABORTED')
+      # Give the cluster up to 45 minutes to be provisioned before failing
+      retries: 270
+      delay: 10
+
+    - name: Disabling HIVE 
+      uri:
+        url: http://{{ groups['ambari'][0] }}:8080/api/v1/clusters/{{ AMBARI_CLUSTER_NAME }}/services/HIVE
+        method: PUT
+        user: "{{ AMBARI_USER_NAME }}"
+        password: "{{ AMBARI_USER_PASSWORD }}"
+        headers:
+          X-Requested-By: "ambari"
+        body: '{"ServiceInfo":{"maintenance_state":"ON"}}'
+        force_basic_auth: yes
+        body_format: raw
+        status_code: 200
+
+    # Run script to update Ambari Service Configs
+    # Do we want to just move this into the blueprint?
+    # It will make it slightly more difficult to maintain
+    # but reduces points of failure and bash code.
+    - name: Apply Ambari Configs
+      command: >
+        /tmp/update_ambari_config.sh {{ AMBARI_USER_NAME }} {{ AMBARI_USER_PASSWORD }} {{ groups['ambari'][0] }} {{ AMBARI_CLUSTER_NAME }}
+
+    # Restart Ambari Services
+    # These should be replaced with 'uri' modules eventually
+    - name: Stop Ambari Managed Services
+      command: >
+        /tmp/ambari-services.sh {{ AMBARI_USER_NAME }} {{ AMBARI_USER_PASSWORD }} {{ groups['ambari'][0] }} {{ AMBARI_CLUSTER_NAME }} stop all
+    
+    - name: Start Ambari Managed Services
+      command: >
+        /tmp/ambari-services.sh {{ AMBARI_USER_NAME }} {{ AMBARI_USER_PASSWORD }} {{ groups['ambari'][0] }} {{ AMBARI_CLUSTER_NAME }} start all
