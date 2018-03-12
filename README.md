@@ -53,6 +53,15 @@ In this case, the `config` file must have the following variables populated:
 	search2.domain.com
 	search3.domain.com
 	```
+- SEARCH_LB
+   - This section should contain the hostnames of the Elasticsearch nodes to use as load balancers, e.g.
+	```
+	[search]
+	searchLB1.domain.com
+	searchLB2.domain.com
+	```
+
+	These nodes will not host any data and cannot be elected as masters, they are simply there to load balance requests to the remainder of the cluster.
  - MASTER
    - This section should contain the hostnames of the master nodes (HDFS Name Node/HBase Master/Storm Nimbus/etc...), e.g.
 	```
